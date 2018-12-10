@@ -37,8 +37,8 @@
 #define DISTANCE_TRIMPOT_MAX_VALUE 300 ///< The distance in cm the represents the pot in max state
 #define DISTANCE_TRIMPOT_MIN_VALUE 0   ///< The distance in cm the represents the pot in min state
 
-#define RELEASE_DELAY 3000
-#define DETECTION_DELAY 200
+#define RELEASE_DELAY 3000 ///< Delay for releasing the detection
+#define DETECTION_DELAY 200 ///< Dalay for afirming a detection
 
 #define BLUE_LED_PIN 10  ///< The pin connected to the blue leg on the RGB led (common anode)
 #define GREEN_LED_PIN 11 ///< The pin connected to the green leg on the RGB led (common anode)
@@ -47,6 +47,9 @@
 #define OUTPUT_SIGNAL_PIN A5 ///< The pin connected to the autoput signal of the board (1 for object detected, 0 for no object)
 
 #define SERIAL_BAUD_RATE 115200 ///< The baudate of the serial port
+
+#define LOG_EVENTS 
+#define LOG_MEASUREMENTS
 
 Ultrasonic g_ultrasonic(TRIGGER_PIN, ECHO_PIN, ULTRASONIC_TIMEOUT); ///< The ultrassonic sensor object (global)
 
@@ -132,7 +135,9 @@ void processReleasedState(bool has_obstacle) {
     g_detection_time = millis();
     g_detection_state = Detecting;
     setLed(0, 255, 0); //GREEN ONLY
+    #ifdef LOG_EVENTS
     Serial.println("Detecting");
+    #endif
   } else {
     setLed(0, 255, 0); //GREEN ONLY
   }
@@ -147,17 +152,23 @@ void processDetectingState(bool has_obstacle)
 {
   if (has_obstacle) {
     if (g_detection_time + DETECTION_DELAY <= millis()) {
+      #ifdef LOG_EVENTS
       Serial.println("Still Detecting");
+      #endif
       setLed(0, 255, 0); //GREEN ONLY
     } else {
       g_detection_state = Detected;
+      #ifdef LOG_EVENTS
       Serial.println("Detected!");
+      #endif
       setLed(255, 0, 0); //RED ONLY
     }
   } else {
     setLed(0, 255, 0); //GREEN ONLY
     g_detection_state = Released;
+    #ifdef LOG_EVENTS
     Serial.println("False Detection, Released!");
+    #endif
   }
 }
 
@@ -172,7 +183,9 @@ void processDetectedState(bool has_obstacle) {
   } else {
     g_detection_time = millis();
     g_detection_state = Releasing;
+    #ifdef LOG_EVENTS
     Serial.println("Releasing...");
+    #endif
   }
 }
 
@@ -185,14 +198,20 @@ void processReleasingState(bool has_obstacle) {
   if (has_obstacle) {
     setLed(255, 0, 0); //RED ONLY
     g_detection_state = Detected;
+    #ifdef LOG_EVENTS
     Serial.println("Another Detection, Releasing Canceled!");
+    #endif
   } else {
     if (g_detection_time + RELEASE_DELAY >= millis()) {
+      #ifdef LOG_EVENTS
       Serial.println("Still Releasing");
+      #endif
       setLed(0, 0, 255); //Blue ONLY
     } else {
       g_detection_state = Released;
+      #ifdef LOG_EVENTS
       Serial.println("Released!");
+      #endif
       setLed(0, 255, 0); //GREEN ONLY
     }
   }
@@ -222,15 +241,17 @@ void loop()
   int measured_distance = measureDistance();
   int trimpot_distance_value = getTrimpotDistanceValue();
 
-  // Serial.print("Distance:\t");
-  // Serial.print(measured_distance);
-  // Serial.print("\t\t");
-  // Serial.print("Pot Distance:\t");
-  // Serial.print(trimpot_distance_value);
-  // Serial.print("\t");
-  // Serial.print("Detection:\t");
-  // Serial.print(g_detection_state);
-  // Serial.println();
+  #ifdef LOG_MEASUREMENTS
+  Serial.print("Distance:\t");
+  Serial.print(measured_distance);
+  Serial.print("\t\t");
+  Serial.print("Pot Distance:\t");
+  Serial.print(trimpot_distance_value);
+  Serial.print("\t");
+  Serial.print("Detection:\t");
+  Serial.print(g_detection_state);
+  Serial.println();
+  #endif
 
   bool has_obstacle = measured_distance <= trimpot_distance_value;
 
@@ -248,33 +269,6 @@ void loop()
     processReleasingState(has_obstacle);
       break;
   }
-
-  // if (g_detecting) {
-  //   if (measured_distance <= trimpot_distance_value) {
-  //     g_detection_time = millis();
-  //     setLed(255, 0, 0); //RED ONLY
-  //     Serial.println("Still Obstacle!!!");
-  //   } else {
-  //     if (g_detection_time + RELEASE_DELAY <= millis()) {
-  //       g_detecting = false;
-  //       setLed(0, 255, 0); //GREEN ONLY
-  //       Serial.println("Release...");
-  //     } else {
-  //       setLed(0, 0, 255); //BLUE
-  //       Serial.println("Delaying!!!");
-  //     }
-  //   }
-  // } else {
-  //   if (measured_distance <= trimpot_distance_value) {
-  //     g_detection_time = millis();
-  //     g_detecting = true;
-  //     setLed(255, 0, 0); //RED ONLY
-  //     Serial.println("Obstacle!");
-  //   } else {
-  //     setLed(0, 255, 0); //GREEN ONLY
-  //   }
-  // }
-
   digitalWrite(OUTPUT_SIGNAL_PIN, g_detection_state == Detected);
 }
 
