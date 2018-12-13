@@ -31,20 +31,24 @@
 #define TRIGGER_PIN 2 ///< The pin connected to the ultrassonic sensor trigger
 #define ECHO_PIN 3    ///< The pin connected to the ultrassonic sensor echo
 #define ULTRASONIC_TIMEOUT 20000UL ///< The timeout for the ultrasonic module
-#define DISTANCE_SAMPLES 10 ///< The ammount of sampes to collect to calculate the distance
+#define DISTANCE_SAMPLES 2 ///< The ammount of sampes to collect to calculate the distance
 
-#define DISTANCE_TRIMPOT_INPUT_PIN A0  ///< The analog pin connected to the trimpot center
+#define DISTANCE_TRIMPOT_INPUT_PIN A1  ///< The analog pin connected to the trimpot center
 #define DISTANCE_TRIMPOT_MAX_VALUE 300 ///< The distance in cm the represents the pot in max state
 #define DISTANCE_TRIMPOT_MIN_VALUE 0   ///< The distance in cm the represents the pot in min state
 
-#define RELEASE_DELAY 3000 ///< Delay for releasing the detection
+#define DELAY_TRIMPOT_INPUT_PIN A0  ///< The analog pin connected to the trimpot center
+#define DELAY_TRIMPOT_MAX_VALUE 5000 ///< The distance in cm the represents the pot in max state
+#define DELAY_TRIMPOT_MIN_VALUE 0   ///< The distance in cm the represents the pot in min state
+
+//#define RELEASE_DELAY 3000 ///< Delay for releasing the detection
 #define DETECTION_DELAY 200 ///< Dalay for afirming a detection
 
 #define BLUE_LED_PIN 10  ///< The pin connected to the blue leg on the RGB led (common anode)
-#define GREEN_LED_PIN 11 ///< The pin connected to the green leg on the RGB led (common anode)
-#define RED_LED_PIN 9    ///< The pin connected to the  leg on the RGB led (common anode)
+#define GREEN_LED_PIN 9 ///< The pin connected to the green leg on the RGB led (common anode)
+#define RED_LED_PIN 11    ///< The pin connected to the  leg on the RGB led (common anode)
 
-#define OUTPUT_SIGNAL_PIN A5 ///< The pin connected to the autoput signal of the board (1 for object detected, 0 for no object)
+#define OUTPUT_SIGNAL_PIN 12 ///< The pin connected to the autoput signal of the board (1 for object detected, 0 for no object)
 
 #define SERIAL_BAUD_RATE 115200 ///< The baudate of the serial port
 
@@ -66,7 +70,7 @@ enum DetectionState {
   Releasing
 };
 
-DetectionState g_detection_state = Released; ///< The detection state of the sensor (global)
+DetectionState g_detection_state = Detected; ///< The detection state of the sensor (global)
 
 /**
  * @brief Set the rgb LED state
@@ -112,17 +116,36 @@ int getTrimpotDistanceValue()
 }
 
 /**
+ * @brief Get the Trimpot Delay Value
+ * 
+ * @return int the delay in miliseconds represented by the trimpot value
+ */
+int getTrimpotDelayValue()
+{
+  return (int)map(analogRead(DELAY_TRIMPOT_INPUT_PIN), 1023, 0, 
+                  DELAY_TRIMPOT_MAX_VALUE, DELAY_TRIMPOT_MIN_VALUE);
+}
+
+/**
  * @brief Takes various samples of distance and return the medium
  * 
  * @return int the distance measured
  */
 int measureDistance() {
   long distance_total = 0;
+  int distance_quantities = 0;
   for (int i = 0; i < DISTANCE_SAMPLES; i++) {
-    distance_total += g_ultrasonic.read();
+    int dist = g_ultrasonic.read();
+    if (dist <= DISTANCE_TRIMPOT_MAX_VALUE) {
+      distance_total += dist;
+      distance_quantities++;
+    } else {
+      distance_total += 300;
+      distance_quantities++;
+    }
     delay(10);
   }
-  return (int) distance_total / DISTANCE_SAMPLES;
+  return (int) distance_total / distance_quantities;
 }
 
 /**
@@ -158,6 +181,7 @@ void processDetectingState(bool has_obstacle)
       setLed(0, 255, 0); //GREEN ONLY
     } else {
       g_detection_state = Detected;
+      digitalWrite(OUTPUT_SIGNAL_PIN, HIGH);
       #ifdef LOG_EVENTS
       Serial.println("Detected!");
       #endif
@@ -194,7 +218,7 @@ void processDetectedState(bool has_obstacle) {
  * 
  * @param has_obstacle if has an obstacle
  */
-void processReleasingState(bool has_obstacle) {
+void processReleasingState(bool has_obstacle, int release_delay) {
   if (has_obstacle) {
     setLed(255, 0, 0); //RED ONLY
     g_detection_state = Detected;
@@ -202,13 +226,14 @@ void processReleasingState(bool has_obstacle) {
     Serial.println("Another Detection, Releasing Canceled!");
     #endif
   } else {
-    if (g_detection_time + RELEASE_DELAY >= millis()) {
+    if (g_detection_time + release_delay >= millis()) {
       #ifdef LOG_EVENTS
       Serial.println("Still Releasing");
       #endif
       setLed(0, 0, 255); //Blue ONLY
     } else {
       g_detection_state = Released;
+      digitalWrite(OUTPUT_SIGNAL_PIN, LOW);
       #ifdef LOG_EVENTS
       Serial.println("Released!");
       #endif
@@ -230,6 +255,7 @@ void setup()
   pinMode(RED_LED_PIN, OUTPUT);
   pinMode(OUTPUT_SIGNAL_PIN, OUTPUT);
   setLed(0,0,0);
+  g_detection_time = millis();
 }
 
 /**
@@ -240,6 +266,7 @@ void loop()
 {
   int measured_distance = measureDistance();
   int trimpot_distance_value = getTrimpotDistanceValue();
+  int trimpot_delay_value = getTrimpotDelayValue();
 
   #ifdef LOG_MEASUREMENTS
   Serial.print("Distance:\t");
@@ -247,6 +274,9 @@ void loop()
   Serial.print("\t\t");
   Serial.print("Pot Distance:\t");
   Serial.print(trimpot_distance_value);
+  Serial.print("\t");
+  Serial.print("Pot Delay:\t");
+  Serial.print(trimpot_delay_value);
   Serial.print("\t");
   Serial.print("Detection:\t");
   Serial.print(g_detection_state);
@@ -266,10 +296,9 @@ void loop()
     processDetectedState(has_obstacle);
       break;
     case Releasing:
-    processReleasingState(has_obstacle);
+    processReleasingState(has_obstacle, trimpot_delay_value);
       break;
   }
-  digitalWrite(OUTPUT_SIGNAL_PIN, g_detection_state == Detected);
 }
 
 /**
